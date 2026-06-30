@@ -1,0 +1,63 @@
+name: Init Python Project Structure
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  init-structure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create python project structure
+        run: |
+          mkdir -p python/stars_ai/agents
+          mkdir -p python/stars_ai/utils
+
+          # ملفات المستوى الأعلى
+          touch python/train_all.py
+          touch python/benchmark.py
+          touch python/auto_improve.py
+          touch python/generate_data.py
+          touch python/compare_models.py
+          touch python/rag_code.py
+          touch python/finetune_arabic.py
+          touch python/prune_model.py
+          touch python/finetune_lora.py
+          touch python/evaluate.py
+          touch python/chat.py
+          touch python/train_custom.py
+          touch python/main.py
+          touch python/requirements.txt
+          touch python/README.md
+
+          # الحزمة stars_ai
+          touch python/stars_ai/__init__.py
+          touch python/stars_ai/key_manager.py
+          touch python/stars_ai/model_registry.py
+          touch python/stars_ai/model_builder.py
+          touch python/stars_ai/gguf_converter.py
+
+          # المجلد agents
+          touch python/stars_ai/agents/__init__.py
+          touch python/stars_ai/agents/manager_agent.py
+          touch python/stars_ai/agents/expert_agents.py
+
+          # المجلد utils
+          touch python/stars_ai/utils/__init__.py
+
+      - name: Commit and push structure
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add python
+          git commit -m "Init python project structure (stars_ai)"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
