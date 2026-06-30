@@ -1,389 +1,472 @@
-"""
-═══════════════════════════════════════════════════════════════
-  Stars AI — تدريب نموذج StarsLM من الصفر على بياناتك الخاصة
-  خطوة بخطوة مع شرح لكل سطر
-═══════════════════════════════════════════════════════════════
+# Stars AI — نظام الذكاء الاصطناعي المتكامل للبرمجة
 
-متى تستخدم هذا الملف؟
-  ✓ عندما تريد بناء نموذج من الصفر بمعماريتك الخاصة
-  ✓ عندما تريد التعلم عن كيفية عمل نماذج اللغة
+مشروع Python متكامل يشمل: تدريب نماذج LLM، Fine-tuning بـ LoRA، تقطير المعرفة،
+تحويل GGUF، محادثة تفاعلية، تقييم تلقائي، ورفع لـ HuggingFace Hub.
 
-للتدريب الكامل على 38,000+ مثال برمجي جاهز:
-  python train_all.py
+---
 
-للـ Fine-tuning على نموذج جاهز (أسرع وأفضل):
-  python finetune_lora.py   ← برمجة إنجليزي
-  python finetune_arabic.py ← برمجة عربي
+## هيكل المشروع الكامل
 
-الخطوات هنا:
-  1. تحضير بياناتك النصية
-  2. بناء Tokenizer مناسب
-  3. ضبط حجم النموذج
-  4. التدريب ومتابعة التقدم
-  5. حفظ النموذج
-  6. تحويله إلى GGUF
-  7. اختباره بـ evaluate.py أو benchmark.py
+```
+/  (جذر المستودع)
+│
+├── train_all.py           ★★  التدريب الشامل — 6 مراحل كاملة (W&B + --resume)
+├── distill_model.py       ★★  تقطير المعرفة Teacher → Student
+├── sync_to_hf.py          ★★  رفع تلقائي إلى HuggingFace Hub
+├── benchmark.py           ★★  Benchmark احترافي — تصنيف نموذجك عالمياً
+├── auto_improve.py        ★★  تحسين تلقائي — يكتشف الضعف ويعالجه وحده
+├── test_suite.py          ★   اختبارات تلقائية شاملة لكل مكونات المشروع
+├── chat.py                ★   محادثة تفاعلية (GGUF + HuggingFace + Ollama)
+├── evaluate.py                تقييم تلقائي على 50 سؤال برمجي
+├── generate_data.py           توليد بيانات التدريب تلقائياً بـ GPT-4
+├── compare_models.py          مقارنة عدة نماذج على نفس السؤال
+├── rag_code.py                مساعد يقرأ كودك ويجيب عنه (RAG)
+├── finetune_lora.py           Fine-tuning بـ LoRA (بيانات البرمجة)
+├── finetune_arabic.py         Fine-tuning للغة العربية
+├── prune_model.py             ضغط النموذج وتصغيره
+├── train_custom.py            تدريب StarsLM من الصفر على بياناتك
+├── main.py                    استعراض النماذج + تدريب + تحويل + Swarm
+├── requirements.txt
+├── .env.example               قالب الإعدادات ومفاتيح API
+│
+└── stars_ai/
+    ├── __init__.py
+    ├── key_manager.py         إدارة مفاتيح API (GCP + .env)
+    ├── model_registry.py      17 مزود، 70+ نموذج
+    ├── model_builder.py       بناء StarsLM من الصفر
+    ├── gguf_converter.py      تحويل إلى GGUF
+    └── agents/
+        ├── manager_agent.py
+        └── expert_agents.py
+```
 
-متطلبات التثبيت:
-  pip install torch sentencepiece tqdm
-═══════════════════════════════════════════════════════════════
-"""
+`★★` = ميزة رئيسية | `★` = ميزة جديدة أو محدّثة
 
-import os
-import sys
-import json
-import time
-from pathlib import Path
+---
 
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
+## التثبيت السريع
 
-sys.path.insert(0, str(Path(__file__).parent))
-from stars_ai.model_builder import StarsLM, StarsConfig, Trainer
-from stars_ai.gguf_converter import StarsLMToGGUF
+```bash
+# استنساخ المشروع
+git clone https://github.com/your-username/stars-ai
+cd stars-ai
 
+# تثبيت المكتبات
+pip install -r requirements.txt
 
-# ════════════════════════════════════════════════════════════════
-# الخطوة 1: تحضير بياناتك النصية
-# ════════════════════════════════════════════════════════════════
+# إعداد متغيرات البيئة
+cp .env.example .env
+# ثم عدّل .env وأضف مفاتيحك
+```
 
-def load_data_from_file(file_path: str) -> list[str]:
-    """الخيار A: تحميل من ملف .txt واحد."""
-    print(f"[خطوة 1A] تحميل من: {file_path}")
-    with open(file_path, encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
-    print(f"  → {len(lines):,} سطر")
-    return lines
+**المكتبات الاختيارية حسب الحاجة:**
+```bash
+pip install llama-cpp-python   # تشغيل GGUF على CPU (لـ chat.py --gguf)
+pip install bitsandbytes       # تكميم 4-bit على GPU
+pip install wandb              # تتبع التدريب (train_all.py --wandb)
+pip install huggingface_hub    # رفع النماذج (sync_to_hf.py)
+```
 
+---
 
-def load_data_from_folder(folder_path: str) -> list[str]:
-    """الخيار B: تحميل من مجلد يحتوي ملفات .txt متعددة."""
-    print(f"[خطوة 1B] تحميل من مجلد: {folder_path}")
-    all_lines = []
-    for txt_file in Path(folder_path).glob("**/*.txt"):
-        with open(txt_file, encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
-            all_lines.extend(lines)
-            print(f"  ✓ {txt_file.name}: {len(lines):,} سطر")
-    print(f"  → إجمالي: {len(all_lines):,} سطر")
-    return all_lines
+## المسار الكامل — من الصفر إلى نموذج منشور
 
+```
+1. train_all.py       ← تدريب النموذج (6 مراحل تلقائية)
+        ↓
+2. evaluate.py        ← قياس الأداء على 50 سؤال
+        ↓
+3. benchmark.py       ← مقارنة مع النماذج العالمية
+        ↓
+4. sync_to_hf.py      ← نشر على HuggingFace Hub
+        ↓
+5. chat.py            ← محادثة تفاعلية
+```
 
-def get_sample_data() -> list[str]:
-    """الخيار C: بيانات تجريبية مدمجة للاختبار السريع."""
-    return [
-        "الذكاء الاصطناعي هو محاكاة الذكاء البشري في الآلات التي تتعلم وتتكيف.",
-        "نماذج اللغة الكبيرة تتعلم من كميات ضخمة من النصوص عبر الإنترنت.",
-        "هندسة Transformer ثورة في عالم الذكاء الاصطناعي منذ عام 2017.",
-        "التعلم العميق يستخدم شبكات عصبية بطبقات متعددة لاستخراج الأنماط.",
-        "GGUF هو تنسيق فعّال لتشغيل نماذج الذكاء الاصطناعي محلياً بدون إنترنت.",
-        "llama.cpp يتيح تشغيل نماذج كبيرة على أجهزة كمبيوتر عادية.",
-        "التكميم يقلل حجم النموذج مع الحفاظ على جودة مقبولة.",
-        "PyTorch إطار عمل مرن لبناء وتدريب نماذج الذكاء الاصطناعي.",
-        "البرمجة هي فن ترجمة الأفكار إلى تعليمات يفهمها الحاسوب.",
-        "خوارزمية الترتيب السريع تعمل بمبدأ التقسيم والتسيّد.",
-        "قواعد البيانات العلاقية تنظم البيانات في جداول مترابطة.",
-        "الشبكة العصبية تتكون من طبقات من الخلايا العصبية الاصطناعية.",
-        "التعلم بالتعزيز يعتمد على مبدأ المكافأة والعقاب لتحسين القرارات.",
-        "الرؤية الحاسوبية تمكّن الآلات من فهم ومعالجة الصور والفيديو.",
-        "معالجة اللغة الطبيعية تجسر الفجوة بين لغة الإنسان ولغة الآلة.",
-        "السحابة الحاسوبية توفر موارد حوسبة قابلة للتوسع عبر الإنترنت.",
-    ] * 100
+---
 
+## الملفات الرئيسية — دليل الاستخدام
 
-# ════════════════════════════════════════════════════════════════
-# الخطوة 2: بناء Tokenizer
-# ════════════════════════════════════════════════════════════════
+---
 
-class CharTokenizer:
-    """Tokenizer بسيط على مستوى الحروف — يعمل مع أي لغة."""
+### `train_all.py` — التدريب الشامل
 
-    SPECIAL = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
+يُنفّذ 6 مراحل متتالية بأمر واحد:
 
-    def __init__(self):
-        self.char_to_id: dict[str, int] = {}
-        self.id_to_char: dict[int, str] = {}
-        self.vocab_size = 0
+```
+المرحلة 1: جمع 38,000+ مثال (CodeAlpaca + HumanEval + عربي)
+المرحلة 2: Fine-tuning بـ LoRA على بيانات البرمجة
+المرحلة 3: Fine-tuning إضافي للغة العربية
+المرحلة 4: تقييم تلقائي على 50 سؤال
+المرحلة 5: ضغط النموذج (Pruning)
+المرحلة 6: تحويل إلى GGUF
+```
 
-    def train(self, texts: list[str]):
-        print("[خطوة 2] بناء Tokenizer...")
-        chars = set()
-        for text in texts:
-            chars.update(text)
-        self.char_to_id = dict(self.SPECIAL)
-        for i, ch in enumerate(sorted(chars), start=len(self.SPECIAL)):
-            self.char_to_id[ch] = i
-        self.id_to_char = {v: k for k, v in self.char_to_id.items()}
-        self.vocab_size = len(self.char_to_id)
-        print(f"  → حجم المعجم: {self.vocab_size:,} حرف")
+```bash
+# تشغيل كل المراحل
+python train_all.py
 
-    def encode(self, text: str) -> list[int]:
-        return [self.char_to_id.get(ch, self.SPECIAL["<unk>"]) for ch in text]
+# مع تتبع التدريب على Weights & Biases
+python train_all.py --wandb
 
-    def decode(self, ids: list[int]) -> str:
-        return "".join(self.id_to_char.get(i, "?") for i in ids)
+# استئناف تلقائي من آخر نقطة تفتيش عند الانقطاع
+python train_all.py --resume
 
-    def save(self, path: str):
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"char_to_id": self.char_to_id}, f, ensure_ascii=False, indent=2)
-        print(f"  → Tokenizer محفوظ: {path}")
+# مراحل محددة فقط
+python train_all.py --stages 1,2,3
 
-    @classmethod
-    def load(cls, path: str) -> "CharTokenizer":
-        tok = cls()
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        tok.char_to_id = data["char_to_id"]
-        tok.id_to_char = {int(v): k for k, v in tok.char_to_id.items()}
-        tok.vocab_size  = len(tok.char_to_id)
-        return tok
+# نموذج مختلف
+python train_all.py --model mistralai/Mistral-7B-v0.1
 
+# إضافة بيانات محلية
+python train_all.py --local-data ./data/my_data.jsonl
 
-class BPETokenizer:
-    """Tokenizer احترافي يستخدم SentencePiece BPE."""
+# تخصيص كامل
+python train_all.py \
+    --model   mistralai/Mistral-7B-v0.1 \
+    --batch   8 \
+    --epochs  5 \
+    --wandb   \
+    --resume
+```
 
-    def __init__(self, vocab_size: int = 8000):
-        self.vocab_size  = vocab_size
-        self._model_path = None
-        self._sp         = None
+---
 
-    def train(self, texts: list[str], model_prefix: str = "./models/bpe_tokenizer"):
-        try:
-            import sentencepiece as spm
-        except ImportError:
-            raise ImportError("pip install sentencepiece")
-        print(f"[خطوة 2] تدريب BPE (vocab={self.vocab_size})...")
-        tmp = "./tmp_corpus.txt"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write("\n".join(texts))
-        os.makedirs(os.path.dirname(model_prefix) or ".", exist_ok=True)
-        spm.SentencePieceTrainer.train(
-            input=tmp, model_prefix=model_prefix, vocab_size=self.vocab_size,
-            character_coverage=0.9995, model_type="bpe",
-            pad_id=0, unk_id=1, bos_id=2, eos_id=3,
-        )
-        os.remove(tmp)
-        self._model_path = f"{model_prefix}.model"
-        self._sp = spm.SentencePieceProcessor(model_file=self._model_path)
+### `distill_model.py` — تقطير المعرفة ★★
 
-    def encode(self, text: str) -> list[int]:
-        return self._sp.encode(text, out_type=int)
+يدرّب نموذجاً صغيراً ليتعلم من نموذج كبير (Teacher → Student).
+النتيجة: نموذج صغير أذكى بكثير من تدريبه المباشر.
 
-    def decode(self, ids: list[int]) -> str:
-        return self._sp.decode(ids)
+```
+Teacher (كبير): Mistral-7B / GPT-4 / Llama-70B
+      ↓  يوجّه التدريب
+Student (صغير): Phi-2 / TinyLlama
+```
 
+```bash
+# تقطير من Mistral-7B إلى Phi-2 (محلياً)
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2
 
-# ════════════════════════════════════════════════════════════════
-# الخطوة 3: Dataset
-# ════════════════════════════════════════════════════════════════
+# تقطير باستخدام GPT-4 عبر API
+python distill_model.py \
+    --teacher gpt-4o \
+    --student microsoft/phi-2 \
+    --use-api
 
-class CustomDataset(Dataset):
-    def __init__(self, texts: list[str], tokenizer, seq_len: int = 256):
-        print(f"[خطوة 3] تحويل النصوص إلى tokens...")
-        self.seq_len = seq_len
-        all_tokens: list[int] = []
-        for text in tqdm(texts, desc="  Tokenizing", unit="نص"):
-            all_tokens.extend(tokenizer.encode(text))
-            all_tokens.append(3)  # <eos>
-        self.data = torch.tensor(all_tokens, dtype=torch.long)
-        print(f"  → {len(self.data):,} token | {len(self):,} عينة")
+# استئناف التقطير من حيث توقف
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --resume
 
-    def __len__(self) -> int:
-        return max(0, len(self.data) - self.seq_len)
+# مع مقارنة Teacher vs Student بعد التدريب
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --compare
 
-    def __getitem__(self, idx: int) -> dict:
-        chunk = self.data[idx : idx + self.seq_len + 1]
-        return {"input_ids": chunk[:-1], "labels": chunk[1:]}
+# بيانات إضافية خاصة
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --data    ./data/my_prompts.txt \
+    --epochs  5
+```
 
+---
 
-# ════════════════════════════════════════════════════════════════
-# الخطوة 4: حلقة تدريب متقدمة
-# ════════════════════════════════════════════════════════════════
+### `sync_to_hf.py` — رفع إلى HuggingFace Hub ★★
 
-class AdvancedTrainer:
-    def __init__(
-        self, model: StarsLM, dataset: CustomDataset, save_dir: str,
-        batch_size: int = 8, lr: float = 3e-4,
-        epochs: int = 5, grad_clip: float = 1.0, warmup_steps: int = 100,
-    ):
-        self.model     = model
-        self.save_dir  = save_dir
-        self.epochs    = epochs
-        self.grad_clip = grad_clip
-        self.device    = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"\n[خطوة 4] الجهاز: {self.device.upper()}")
-        self.model.to(self.device)
+يرفع النموذج بشكل تلقائي مع توليد Model Card احترافي.
 
-        self.loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
-                                  drop_last=True, num_workers=0)
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=lr, weight_decay=0.01, betas=(0.9, 0.95)
-        )
-        total_steps    = epochs * len(self.loader)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=total_steps - warmup_steps
-        )
-        self.loss_fn   = nn.CrossEntropyLoss()
-        self.best_loss = float("inf")
-        self.history   = []
-        os.makedirs(save_dir, exist_ok=True)
+```bash
+# إعداد Token
+export HF_TOKEN=hf_...   # من huggingface.co/settings/tokens
 
-    def train(self) -> list[float]:
-        print(f"\n{'─'*56}")
-        print(f"  بدء التدريب: {self.epochs} epoch | {len(self.loader)} خطوة/epoch")
-        print(f"{'─'*56}\n")
+# رفع نموذج HuggingFace
+python sync_to_hf.py \
+    --model ./models/stars_expert_merged \
+    --repo  your-username/stars-ai
 
-        for epoch in range(1, self.epochs + 1):
-            self.model.train()
-            epoch_loss  = 0.0
-            epoch_start = time.time()
+# رفع ملف GGUF
+python sync_to_hf.py \
+    --gguf ./models/stars_expert.gguf \
+    --repo your-username/stars-ai-gguf
 
-            progress = tqdm(self.loader, desc=f"Epoch {epoch}/{self.epochs}", unit="batch")
-            for batch in progress:
-                input_ids = batch["input_ids"].to(self.device)
-                labels    = batch["labels"].to(self.device)
-                logits    = self.model(input_ids)
-                loss      = self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
-                self.optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-                self.optimizer.step()
-                self.scheduler.step()
-                epoch_loss += loss.item()
-                progress.set_postfix({
-                    "loss": f"{loss.item():.4f}",
-                    "ppl":  f"{torch.exp(loss).item():.1f}",
-                    "lr":   f"{self.optimizer.param_groups[0]['lr']:.2e}",
-                })
+# رفع كليهما معاً
+python sync_to_hf.py \
+    --model ./models/stars_expert_merged \
+    --gguf  ./models/stars_expert.gguf  \
+    --repo  your-username/stars-ai
 
-            avg_loss = epoch_loss / len(self.loader)
-            elapsed  = time.time() - epoch_start
-            self.history.append(avg_loss)
-            print(f"\n  ✓ Epoch {epoch} | خسارة: {avg_loss:.4f} | وقت: {elapsed:.1f}ث")
+# رفع خاص (private)
+python sync_to_hf.py \
+    --model   ./models/stars_expert_merged \
+    --repo    your-username/stars-ai \
+    --private
+```
 
-            if avg_loss < self.best_loss:
-                self.best_loss = avg_loss
-                self.model.save_pretrained(self.save_dir)
-                print(f"  💾 أفضل نموذج محفوظ! (خسارة: {avg_loss:.4f})")
+---
 
-        print(f"\n{'═'*56}")
-        print(f"  التدريب اكتمل! أفضل خسارة: {self.best_loss:.4f}")
-        print(f"  النموذج: {self.save_dir}")
-        print(f"{'═'*56}\n")
-        return self.history
+### `chat.py` — المحادثة التفاعلية ★
 
-    def test_generation(self, tokenizer, prompt: str = "الذكاء الاصطناعي", num_tokens: int = 80):
-        print(f"\n[اختبار] المدخل: '{prompt}'")
-        self.model.eval()
-        input_ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long).to(self.device)
-        with torch.no_grad():
-            output_ids = self.model.generate(input_ids, max_new_tokens=num_tokens,
-                                              temperature=0.8, top_k=40)
-        generated = tokenizer.decode(output_ids[0].tolist())
-        print(f"  النتيجة: {generated}")
-        return generated
+يدعم ثلاثة محركات للتشغيل:
 
+```bash
+# GGUF (أسرع — يعمل على CPU بدون GPU)
+python chat.py --gguf ./models/stars_expert.gguf
 
-# ════════════════════════════════════════════════════════════════
-# الخطوة 5، 6: الحفظ والتحويل
-# ════════════════════════════════════════════════════════════════
+# HuggingFace (تحميل مباشر)
+python chat.py --model ./models/stars_expert_merged
+python chat.py --model microsoft/phi-2
 
-def convert_to_gguf(model_dir: str, output_path: str, quant: str = "q4_0"):
-    """الخطوة 6: تحويل النموذج إلى GGUF."""
-    print(f"\n[خطوة 6] تحويل إلى GGUF ({quant})...")
-    converter = StarsLMToGGUF(model_dir=model_dir, output_path=output_path, quant=quant)
-    converter.convert()
-    size_mb = os.path.getsize(output_path) / 1024 / 1024
-    print(f"  ✓ GGUF جاهز: {output_path} ({size_mb:.1f} MB)")
-    print(f"\n  للاستخدام:")
-    print(f"  python chat.py     --gguf {output_path}")
-    print(f"  python evaluate.py --gguf {output_path}")
-    print(f"  python benchmark.py --my-gguf {output_path}")
+# Ollama (أسهل — بدون تحميل يدوي)
+python chat.py --ollama llama3
+python chat.py --ollama mistral
+python chat.py --ollama phi3 --ollama-host http://192.168.1.5:11434
 
+# تخصيص الإخراج
+python chat.py --gguf ./models/stars_expert.gguf \
+    --temp 0.7 --max-tokens 600
+```
 
-# ════════════════════════════════════════════════════════════════
-# نقطة الدخول
-# ════════════════════════════════════════════════════════════════
+**أوامر داخل المحادثة:**
+```
+مسح / clear  ← مسح تاريخ المحادثة
+حفظ / save   ← حفظ المحادثة في ملف JSON
+خروج / quit  ← إنهاء البرنامج
+مساعدة       ← عرض الأوامر
+```
 
-def main():
-    print("═" * 56)
-    print("  Stars AI — تدريب نموذج ذكاء اصطناعي خطوة بخطوة")
-    print("═" * 56)
-    print("\n  للتدريب الكامل: python train_all.py\n")
+**إعداد Ollama:**
+```bash
+# تثبيت Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
 
-    CONFIG = {
-        "data_file":   None,
-        "data_folder": None,
-        "model_dir":   "./models/my_model",
-        "gguf_path":   "./models/my_model.gguf",
-        "tokenizer":   "char",           # "char" أو "bpe"
-        "vocab_size":  32000,
-        "hidden_size": 512,
-        "num_layers":  6,
-        "num_heads":   8,
-        "seq_len":     256,
-        "batch_size":  8,
-        "epochs":      5,
-        "lr":          3e-4,
-        "quant":       "q4_0",
-    }
+# تحميل نموذج
+ollama pull llama3
+ollama pull mistral
+ollama pull phi3
 
-    # الخطوة 1: تحميل البيانات
-    if CONFIG["data_file"] and os.path.exists(CONFIG["data_file"]):
-        texts = load_data_from_file(CONFIG["data_file"])
-    elif CONFIG["data_folder"] and os.path.isdir(CONFIG["data_folder"]):
-        texts = load_data_from_folder(CONFIG["data_folder"])
-    else:
-        print("[تنبيه] بيانات تجريبية — غيّر 'data_file' في CONFIG لاستخدام بياناتك.\n")
-        texts = get_sample_data()
+# تشغيل الخادم (إن لم يكن يعمل)
+ollama serve
+```
 
-    # الخطوة 2: Tokenizer
-    if CONFIG["tokenizer"] == "bpe":
-        tokenizer = BPETokenizer(vocab_size=CONFIG["vocab_size"])
-        tokenizer.train(texts, model_prefix=f"{CONFIG['model_dir']}/bpe")
-        effective_vocab = tokenizer.vocab_size
-    else:
-        tokenizer = CharTokenizer()
-        tokenizer.train(texts)
-        tokenizer.save(f"{CONFIG['model_dir']}_tokenizer.json")
-        effective_vocab = tokenizer.vocab_size
+---
 
-    # الخطوة 3: Dataset
-    dataset = CustomDataset(texts, tokenizer, seq_len=CONFIG["seq_len"])
+### `test_suite.py` — الاختبارات التلقائية ★
 
-    # الخطوة 4: بناء النموذج
-    print(f"\n[خطوة 4] بناء النموذج...")
-    model_cfg = StarsConfig(
-        vocab_size  = effective_vocab,
-        hidden_size = CONFIG["hidden_size"],
-        num_layers  = CONFIG["num_layers"],
-        num_heads   = CONFIG["num_heads"],
-        max_seq_len = CONFIG["seq_len"],
-    )
-    model = StarsLM(model_cfg)
-    params = model.count_parameters()
-    print(f"  → {params:,} معامل ({params/1e6:.1f}M)")
+يتحقق من صحة كل مكونات المشروع:
 
-    # الخطوة 5: التدريب
-    trainer = AdvancedTrainer(
-        model=model, dataset=dataset, save_dir=CONFIG["model_dir"],
-        batch_size=CONFIG["batch_size"], lr=CONFIG["lr"], epochs=CONFIG["epochs"],
-    )
-    trainer.train()
-    trainer.test_generation(tokenizer)
+```bash
+# كل الاختبارات
+python test_suite.py
 
-    # الخطوة 6: تحويل إلى GGUF
-    convert_to_gguf(CONFIG["model_dir"], CONFIG["gguf_path"], CONFIG["quant"])
+# اختبارات سريعة (بدون تحميل نماذج)
+python test_suite.py --fast
 
-    print("\n" + "═" * 56)
-    print("  ✓ اكتمل! الخطوات التالية:")
-    print(f"  python evaluate.py --gguf {CONFIG['gguf_path']}")
-    print(f"  python benchmark.py --my-gguf {CONFIG['gguf_path']}")
-    print("═" * 56)
+# مجموعة محددة
+python test_suite.py --module imports   # فحص المكتبات
+python test_suite.py --module package   # فحص حزمة stars_ai
+python test_suite.py --module model     # فحص StarsLM
+python test_suite.py --module data      # فحص معالجة البيانات
+python test_suite.py --module eval      # فحص نظام التقييم
+python test_suite.py --module files     # فحص وجود الملفات
+python test_suite.py --module env       # فحص متغيرات البيئة
+```
 
+**مثال على المخرجات:**
+```
+══════════════════════════════════════════════════════════════════
+  Stars AI — Test Suite
+══════════════════════════════════════════════════════════════════
 
-if __name__ == "__main__":
-    main()
+[1] اختبار المكتبات الأساسية
+  ✓  import PyTorch                                        (0.31ث)
+  ✓  import HuggingFace Transformers                      (0.18ث)
+  ✓  import PEFT / LoRA                                   (0.12ث)
+
+[5] اختبار نظام التقييم
+  ✓  Evaluator — 50 سؤال بالضبط                         (0.01ث)
+  ✓  Evaluator — صيغة الأسئلة صحيحة                      (0.02ث)
+
+══════════════════════════════════════════════════════════════════
+  النتائج: 24/24 اختبار ناجح | 0 فاشل
+══════════════════════════════════════════════════════════════════
+  ✅ جميع الاختبارات ناجحة — المشروع جاهز!
+```
+
+---
+
+### `evaluate.py` — التقييم التلقائي
+
+```bash
+# تقييم نموذجك
+python evaluate.py --model ./models/stars_expert_merged
+python evaluate.py --gguf  ./models/stars_expert.gguf
+
+# مقارنة قبل وبعد التدريب
+python evaluate.py \
+    --before microsoft/phi-2 \
+    --after  ./models/stars_expert_merged
+
+# تقييم نموذج HuggingFace مباشرة
+python evaluate.py --model microsoft/phi-2
+```
+
+**الفئات (50 سؤال):**
+
+| الفئة | عدد الأسئلة |
+|-------|-------------|
+| Python أساسي | 10 |
+| البرمجة كائنية التوجه | 10 |
+| الخوارزميات وهياكل البيانات | 10 |
+| Python متقدم | 10 |
+| قواعد البيانات والـ API | 10 |
+
+---
+
+### `benchmark.py` — المقارنة العالمية
+
+```bash
+# تصنيف نموذجك مقارنةً بالنماذج العالمية
+python benchmark.py --my-model ./models/stars_expert_merged
+
+# مع ملف GGUF
+python benchmark.py --my-model ./models/stars_expert.gguf --gguf
+
+# حفظ النتائج
+python benchmark.py --my-model ./models/stars_expert_merged \
+    --output ./results/benchmark.json
+```
+
+---
+
+### `generate_data.py` — توليد البيانات
+
+```bash
+export OPENAI_API_KEY=sk-...
+
+python generate_data.py --count 500  --topic python
+python generate_data.py --count 1000 --topic algorithms
+python generate_data.py --count 300  --topic arabic_python
+python generate_data.py --count 800  --topic mixed \
+    --output ./data/mixed.jsonl
+```
+
+**المواضيع:** `python` | `algorithms` | `web` | `arabic_python` | `mixed`
+
+---
+
+### `distill_model.py` + `auto_improve.py` + `compare_models.py`
+
+```bash
+# التحسين التلقائي (يكتشف نقاط الضعف ويعالجها)
+python auto_improve.py --model ./models/stars_expert_merged --rounds 3
+
+# مقارنة نماذج جنباً إلى جنب
+python compare_models.py --models phi-2 mistral llama3
+python compare_models.py --gguf ./models/before.gguf ./models/after.gguf
+
+# مساعد RAG يقرأ كودك
+python rag_code.py --project ./my_project --gguf ./models/stars_expert.gguf
+```
+
+---
+
+## إعداد البيئة
+
+```bash
+# انسخ ملف الإعدادات
+cp .env.example .env
+```
+
+ثم عدّل `.env` وأضف مفاتيحك:
+
+```env
+# OpenAI (للتوليد والتقطير عبر API)
+OPENAI_API_KEY=sk-...
+
+# HuggingFace (للرفع + النماذج المحمية)
+HF_TOKEN=hf_...
+
+# Weights & Biases (تتبع التدريب)
+WANDB_API_KEY=...
+WANDB_PROJECT=stars-ai
+```
+
+---
+
+## إعداد Google Cloud (اختياري)
+
+```bash
+gcloud iam service-accounts create stars-ai-sa
+gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:stars-ai-sa@PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+gcloud iam service-accounts keys create key.json \
+    --iam-account=stars-ai-sa@PROJECT_ID.iam.gserviceaccount.com
+export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/key.json"
+echo -n "sk-..." | gcloud secrets create openai_api_key --data-file=-
+```
+
+---
+
+## النشر على Ubuntu (Systemd)
+
+```bash
+sudo mkdir -p /opt/stars-ai
+sudo cp -r ./* /opt/stars-ai/
+pip install -r /opt/stars-ai/requirements.txt
+```
+
+`/etc/systemd/system/stars-ai.service`:
+```ini
+[Unit]
+Description=Stars AI
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/stars-ai
+EnvironmentFile=/opt/stars-ai/.env
+ExecStart=/usr/bin/python3 chat.py --gguf ./models/stars_expert.gguf
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now stars-ai
+sudo journalctl -u stars-ai -f
+```
+
+---
+
+## ملاحظات تقنية
+
+| الميزة | التفاصيل |
+|--------|----------|
+| معمارية StarsLM | Decoder-only + RoPE + RMSNorm + SwiGLU |
+| LoRA | r=16, alpha=32 — يدرّب 0.1% من الأوزان فقط |
+| تقطير المعرفة | Teacher→Student — KL Divergence على logits |
+| RAG | TF-IDF بسيط — لا يحتاج embeddings أو GPU |
+| Pruning | Magnitude + Structured + INT8 Dynamic |
+| تنسيق GGUF | v3 — متوافق مع llama.cpp، Ollama، LM Studio |
+| التكميم | f32 / f16 / Q8_0 / Q4_0 |
+| التقييم | 50 سؤال، 5 فئات، معيار النجاح 50% |
+| W&B | تتبع Loss + LR + GPU في الوقت الحقيقي |
+| Ollama | HTTP API محلي — بدون تحميل يدوي للنماذج |
+
+---
+
+## متطلبات النظام
+
+| الاستخدام | الحد الأدنى | الموصى به |
+|-----------|-------------|-----------|
+| محادثة GGUF (CPU) | 8 GB RAM | 16 GB RAM |
+| Fine-tuning LoRA | GPU 8 GB | GPU 16+ GB |
+| تقطير المعرفة | GPU 16 GB | GPU 24+ GB |
+| توليد البيانات (API) | أي جهاز | أي جهاز |
