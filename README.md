@@ -21,10 +21,16 @@ multi-agent-swarm/
 
 ## 1. إعداد Google Cloud (مرة واحدة فقط)
 
+### المشروع المستخدم في هذا الدليل: `stars-501003`
+
+```bash
+gcloud config set project stars-501003
+```
+
 ### أ. تفعيل واجهة Secret Manager
 
 ```bash
-gcloud services enable secretmanager.googleapis.com --project=YOUR_PROJECT_ID
+gcloud services enable secretmanager.googleapis.com --project=stars-501003
 ```
 
 ### ب. تخزين المفاتيح كأسرار (Secrets)
@@ -33,10 +39,10 @@ gcloud services enable secretmanager.googleapis.com --project=YOUR_PROJECT_ID
 
 ```bash
 echo -n "sk-xxxxxxxx" | gcloud secrets create OPENAI_API_KEY \
-  --data-file=- --project=YOUR_PROJECT_ID
+  --data-file=- --project=stars-501003
 
 echo -n "sk-ant-xxxxxxxx" | gcloud secrets create ANTHROPIC_API_KEY \
-  --data-file=- --project=YOUR_PROJECT_ID
+  --data-file=- --project=stars-501003
 ```
 
 ### ج. إنشاء Service Account وإعطاؤه صلاحية `Secret Manager Secret Accessor`
@@ -45,16 +51,16 @@ echo -n "sk-ant-xxxxxxxx" | gcloud secrets create ANTHROPIC_API_KEY \
 # 1. إنشاء الحساب
 gcloud iam service-accounts create swarm-runner \
   --display-name="Multi-Agent Swarm Runner" \
-  --project=YOUR_PROJECT_ID
+  --project=stars-501003
 
 # 2. ربط الصلاحية المطلوبة فقط (مبدأ أقل الصلاحيات)
-gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-  --member="serviceAccount:swarm-runner@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding stars-501003 \
+  --member="serviceAccount:swarm-runner@stars-501003.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 
 # 3. إصدار مفتاح JSON لاستخدامه على خادم Ubuntu (خارج بيئة GCP)
 gcloud iam service-accounts keys create service-account.json \
-  --iam-account=swarm-runner@YOUR_PROJECT_ID.iam.gserviceaccount.com
+  --iam-account=swarm-runner@stars-501003.iam.gserviceaccount.com
 ```
 
 > إن كان الخادم نفسه VM على GCP (Compute Engine)، يمكنك تجاهل الخطوة 3
@@ -86,7 +92,7 @@ chmod +x deploy.sh
 ## 3. ضبط متغيرات البيئة
 
 ```bash
-export GCP_PROJECT_ID="your-project-id"
+export GCP_PROJECT_ID="stars-501003"
 export GOOGLE_APPLICATION_CREDENTIALS="/opt/multi-agent-swarm/service-account.json"
 ```
 
