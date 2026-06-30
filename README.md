@@ -1,317 +1,453 @@
 # stars-ai
-# Stars AI — نظام الوكيل الذكي المتعدد النماذج
+# Stars AI — نظام الذكاء الاصطناعي المتكامل للبرمجة
 
-مشروع Python متكامل يشمل كل ما تحتاجه للعمل مع نماذج الذكاء الاصطناعي.
+مشروع Python متكامل يشمل: تدريب نماذج LLM، Fine-tuning بـ LoRA، تقطير المعرفة،
+تحويل GGUF، محادثة تفاعلية، تقييم تلقائي، ورفع لـ HuggingFace Hub.
 
 ---
 
 ## هيكل المشروع الكامل
 
 ```
-python/
-├── train_all.py           ← التدريب الشامل الكامل (كل المصادر + كل المراحل) ★★
-├── benchmark.py           ← Benchmark احترافي — تصنيف نموذجك عالمياً  ★★
-├── auto_improve.py        ← تحسين تلقائي — يكتشف الضعف ويعالجه وحده ★★
-├── main.py                ← استعراض النماذج + تدريب + تحويل + Swarm
-├── train_custom.py        ← تدريب StarsLM على بياناتك الخاصة خطوة بخطوة
-├── finetune_lora.py       ← Fine-tuning بـ LoRA (برمجة - إنجليزي)
-├── finetune_arabic.py     ← Fine-tuning للغة العربية  ★
-├── generate_data.py       ← توليد بيانات التدريب تلقائياً بـ GPT-4  ★
-├── compare_models.py      ← مقارنة عدة نماذج على نفس السؤال  ★
-├── rag_code.py            ← مساعد يقرأ كودك ويجيب عنه (RAG)  ★
-├── chat.py                ← محادثة تفاعلية من Terminal
-├── evaluate.py            ← تقييم تلقائي على 50 سؤال برمجي
-├── prune_model.py         ← ضغط النموذج وتصغيره  ★
+/  (جذر المستودع)
+│
+├── train_all.py           ★★  التدريب الشامل — 6 مراحل كاملة (W&B + --resume)
+├── distill_model.py       ★★  تقطير المعرفة Teacher → Student
+├── sync_to_hf.py          ★★  رفع تلقائي إلى HuggingFace Hub
+├── benchmark.py           ★★  Benchmark احترافي — تصنيف نموذجك عالمياً
+├── auto_improve.py        ★★  تحسين تلقائي — يكتشف الضعف ويعالجه وحده
+├── test_suite.py          ★   اختبارات تلقائية شاملة لكل مكونات المشروع
+├── chat.py                ★   محادثة تفاعلية (GGUF + HuggingFace + Ollama)
+├── evaluate.py                تقييم تلقائي على 50 سؤال برمجي
+├── generate_data.py           توليد بيانات التدريب تلقائياً بـ GPT-4
+├── compare_models.py          مقارنة عدة نماذج على نفس السؤال
+├── rag_code.py                مساعد يقرأ كودك ويجيب عنه (RAG)
+├── finetune_lora.py           Fine-tuning بـ LoRA (بيانات البرمجة)
+├── finetune_arabic.py         Fine-tuning للغة العربية
+├── prune_model.py             ضغط النموذج وتصغيره
+├── train_custom.py            تدريب StarsLM من الصفر على بياناتك
+├── main.py                    استعراض النماذج + تدريب + تحويل + Swarm
 ├── requirements.txt
+├── install.sh             ★   تثبيت تلقائي (يكتشف البيئة: Replit/Linux/macOS)
+├── .env.example               قالب الإعدادات ومفاتيح API
+│
 └── stars_ai/
-    ├── key_manager.py     ← إدارة مفاتيح API (GCP + .env)
-    ├── model_registry.py  ← 17 مزود، 70+ نموذج
-    ├── model_builder.py   ← بناء StarsLM من الصفر
-    ├── gguf_converter.py  ← تحويل إلى GGUF
+    ├── __init__.py
+    ├── key_manager.py         إدارة مفاتيح API (GCP + .env)
+    ├── model_registry.py      17 مزود، 70+ نموذج
+    ├── model_builder.py       بناء StarsLM من الصفر
+    ├── gguf_converter.py      تحويل إلى GGUF
     └── agents/
         ├── manager_agent.py
         └── expert_agents.py
 ```
-★★ = الملفات الرئيسية | ★ = ميزة جديدة
+
+`★★` = ميزة رئيسية | `★` = ميزة جديدة أو محدّثة
 
 ---
 
-## التثبيت
+## التثبيت السريع
 
 ```bash
-cd python
+# استنساخ المشروع
+git clone https://github.com/your-username/stars-ai
+cd stars-ai
+
+# التثبيت التلقائي (يكتشف البيئة ويختار الطريقة الصحيحة)
+bash install.sh             # المكتبات الأساسية
+bash install.sh --full      # كل المكتبات (GGUF + CrewAI + Google Cloud)
+bash install.sh --check     # فحص ما هو مثبّت فقط
+
+# إعداد متغيرات البيئة
+cp .env.example .env
+# ثم عدّل .env وأضف مفاتيحك
+```
+
+### التثبيت اليدوي
+
+**على Replit / NixOS** (طريقة `uv` الجديدة — `pip install` المباشر لا يعمل):
+```bash
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+```
+
+**على Linux / macOS العادي:**
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
-# المكتبات الأساسية
 pip install -r requirements.txt
+```
 
-# إضافات اختيارية
-pip install llama-cpp-python    # لتشغيل ملفات GGUF
-pip install sentencepiece       # لـ BPE Tokenizer
-pip install bitsandbytes        # تكميم 4-bit (GPU فقط)
+> ⚠️ **ملاحظة Replit:** البيئة تستخدم NixOS، لذا `pip install` المباشر يفشل برسالة
+> "externally managed environment". الحل هو استخدام `uv` مع بيئة افتراضية كما في `install.sh`.
+
+**المكتبات الاختيارية حسب الحاجة:**
+```bash
+uv pip install --python .venv/bin/python llama-cpp-python   # GGUF على CPU
+uv pip install --python .venv/bin/python bitsandbytes       # تكميم 4-bit (GPU)
+uv pip install --python .venv/bin/python crewai langchain   # Multi-Agent Swarm
 ```
 
 ---
 
-## المسار الكامل — من الصفر إلى نموذج جاهز
+## بدء سريع — جهاز بدون GPU (CPU فقط) 💻
 
-### الأمر الواحد الذي يفعل كل شيء تلقائياً:
+أفضل طريقة لجهاز بدون كرت شاشة هي استخدام **Ollama** مع نماذج GGUF جاهزة:
+
 ```bash
-python train_all.py
+# 1. ثبّت Ollama
+curl -fsSL https://ollama.ai/install.sh | sh   # Linux/macOS
+# Windows: حمّل من https://ollama.com/download
+
+# 2. حمّل نموذجاً مناسباً لحجم RAM جهازك
+ollama pull phi3:mini      # 1.6 GB — لـ 8 GB RAM
+ollama pull llama3.2       # 4 GB   — لـ 16 GB RAM
+ollama pull codellama      # 4 GB   — برمجة متخصصة
+
+# 3. ابدأ المحادثة عبر Stars AI
+bash install.sh
+python chat.py --ollama phi3:mini
 ```
 
-هذا الأمر يُنفّذ تلقائياً 6 مراحل متتالية:
+**اختيار النموذج حسب RAM:**
+
+| RAM | النموذج | الحجم | الأداء |
+|-----|---------|-------|--------|
+| 8 GB  | `phi3:mini`   | 1.6 GB | سريع |
+| 16 GB | `llama3.2`    | 4 GB   | جيد |
+| 32 GB | `llama3.1:8b` | 4.7 GB | ممتاز |
+| 32 GB+| `codellama:13b`| 7.4 GB | احترافي |
+
+> 💡 التدريب الكامل يحتاج GPU، لكن المحادثة والتقييم يعملان بسلاسة على CPU.
+
+---
+
+## المسار الكامل — من الصفر إلى نموذج منشور
 
 ```
-المرحلة 1: جمع 38,000+ مثال من 4 مصادر + بيانات عربية
-     ↓
-المرحلة 2: Fine-tuning بـ LoRA على كل البيانات
-     ↓
+1. train_all.py       ← تدريب النموذج (6 مراحل تلقائية)
+        ↓
+2. evaluate.py        ← قياس الأداء على 50 سؤال
+        ↓
+3. benchmark.py       ← مقارنة مع النماذج العالمية
+        ↓
+4. sync_to_hf.py      ← نشر على HuggingFace Hub
+        ↓
+5. chat.py            ← محادثة تفاعلية
+```
+
+---
+
+## الملفات الرئيسية — دليل الاستخدام
+
+---
+
+### `train_all.py` — التدريب الشامل
+
+يُنفّذ 6 مراحل متتالية بأمر واحد:
+
+```
+المرحلة 1: جمع 38,000+ مثال (CodeAlpaca + HumanEval + عربي)
+المرحلة 2: Fine-tuning بـ LoRA على بيانات البرمجة
 المرحلة 3: Fine-tuning إضافي للغة العربية
-     ↓
-المرحلة 4: تقييم تلقائي على 50 سؤال (قبل/بعد)
-     ↓
-المرحلة 5: ضغط النموذج (Pruning 30%)
-     ↓
-المرحلة 6: تحويل إلى GGUF للاستخدام المحلي
+المرحلة 4: تقييم تلقائي على 50 سؤال
+المرحلة 5: ضغط النموذج (Pruning)
+المرحلة 6: تحويل إلى GGUF
+```
+
+```bash
+# تشغيل كل المراحل
+python train_all.py
+
+# مع تتبع التدريب على Weights & Biases
+python train_all.py --wandb
+
+# استئناف تلقائي من آخر نقطة تفتيش عند الانقطاع
+python train_all.py --resume
+
+# مراحل محددة فقط
+python train_all.py --stages 1,2,3
+
+# نموذج مختلف
+python train_all.py --model mistralai/Mistral-7B-v0.1
+
+# إضافة بيانات محلية
+python train_all.py --local-data ./data/my_data.jsonl
+
+# تخصيص كامل
+python train_all.py \
+    --model   mistralai/Mistral-7B-v0.1 \
+    --batch   8 \
+    --epochs  5 \
+    --wandb   \
+    --resume
 ```
 
 ---
 
-### أو يدوياً خطوة بخطوة:
+### `distill_model.py` — تقطير المعرفة ★★
+
+يدرّب نموذجاً صغيراً ليتعلم من نموذج كبير (Teacher → Student).
+النتيجة: نموذج صغير أذكى بكثير من تدريبه المباشر.
 
 ```
-generate_data.py → finetune_lora.py → finetune_arabic.py → evaluate.py → prune_model.py → main.py convert → chat.py
+Teacher (كبير): Mistral-7B / GPT-4 / Llama-70B
+      ↓  يوجّه التدريب
+Student (صغير): Phi-2 / TinyLlama
+```
+
+```bash
+# تقطير من Mistral-7B إلى Phi-2 (محلياً)
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2
+
+# تقطير باستخدام GPT-4 عبر API
+python distill_model.py \
+    --teacher gpt-4o \
+    --student microsoft/phi-2 \
+    --use-api
+
+# استئناف التقطير من حيث توقف
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --resume
+
+# مع مقارنة Teacher vs Student بعد التدريب
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --compare
+
+# بيانات إضافية خاصة
+python distill_model.py \
+    --teacher mistralai/Mistral-7B-v0.1 \
+    --student microsoft/phi-2 \
+    --data    ./data/my_prompts.txt \
+    --epochs  5
 ```
 
 ---
 
-## الملفات الجديدة — الدليل السريع
+### `sync_to_hf.py` — رفع إلى HuggingFace Hub ★★
 
----
-
-### 1. توليد بيانات تلقائياً (`generate_data.py`)
-
-يستخدم GPT-4 لإنشاء آلاف الأمثلة البرمجية تلقائياً.
+يرفع النموذج بشكل تلقائي مع توليد Model Card احترافي.
 
 ```bash
-# توليد 500 مثال Python
-python generate_data.py --count 500 --topic python
+# إعداد Token
+export HF_TOKEN=hf_...   # من huggingface.co/settings/tokens
 
-# توليد 1000 مثال للخوارزميات
-python generate_data.py --count 1000 --topic algorithms
+# رفع نموذج HuggingFace
+python sync_to_hf.py \
+    --model ./models/stars_expert_merged \
+    --repo  your-username/stars-ai
 
-# توليد بيانات عربية
-python generate_data.py --count 300 --topic arabic_python
+# رفع ملف GGUF
+python sync_to_hf.py \
+    --gguf ./models/stars_expert.gguf \
+    --repo your-username/stars-ai-gguf
 
-# توليد مواضيع مختلطة
-python generate_data.py --count 800 --topic mixed --output ./data/mixed.jsonl
-```
+# رفع كليهما معاً
+python sync_to_hf.py \
+    --model ./models/stars_expert_merged \
+    --gguf  ./models/stars_expert.gguf  \
+    --repo  your-username/stars-ai
 
-**المواضيع المتاحة:** `python` | `algorithms` | `web` | `arabic_python` | `mixed`
-
-بعد التوليد، استخدم الملف مباشرة في التدريب:
-```python
-# في finetune_lora.py:
-"dataset_source": "local_file",
-"local_file": "./data/data_python.jsonl",
-```
-
----
-
-### 2. مقارنة نماذج متعددة (`compare_models.py`)
-
-يسأل عدة نماذج نفس السؤال في نفس الوقت ويعرضها جنباً إلى جنب.
-
-```bash
-# مقارنة نموذجين بالأسماء المختصرة
-python compare_models.py --models phi-2 mistral
-
-# مقارنة ثلاثة نماذج
-python compare_models.py --models phi-2 mistral llama3
-
-# مقارنة ملفات GGUF
-python compare_models.py --gguf ./models/before.gguf ./models/after.gguf
-
-# سؤال واحد مباشر
-python compare_models.py --models phi-2 mistral \
-    --question "اكتب دالة Binary Search"
-
-# وضع تفاعلي مع حفظ النتائج
-python compare_models.py --models phi-2 mistral --save results.jsonl
-```
-
-**الأسماء المختصرة:** `phi-2` | `phi-3` | `mistral` | `llama3` | `llama2` | `deepseek` | `gemma` | `qwen` | `dolphin`
-
-**المخرجات:**
-```
-  ┌─ phi-2 (2.3ث | 85 كلمة | يحتوي كود) ✓
-  │  def binary_search(arr, target):
-  │      left, right = 0, len(arr) - 1
-  │      ...
-  └────────────────────────────────────────
-
-  ┌─ mistral (4.1ث | 120 كلمة | يحتوي كود) ✓
-  │  ...
-  └────────────────────────────────────────
-
-  الأسرع: phi-2 (2.3ث)
+# رفع خاص (private)
+python sync_to_hf.py \
+    --model   ./models/stars_expert_merged \
+    --repo    your-username/stars-ai \
+    --private
 ```
 
 ---
 
-### 3. مساعد يقرأ كودك ويجيب عنه (`rag_code.py`)
+### `chat.py` — المحادثة التفاعلية ★
 
-يفهرس مشروعك البرمجي كاملاً ثم يجيب على أسئلتك بناءً على كودك أنت.
+يدعم ثلاثة محركات للتشغيل:
 
 ```bash
-# فهرسة مشروعك والمحادثة عنه
-python rag_code.py --project ./my_project --model microsoft/phi-2
+# GGUF (أسرع — يعمل على CPU بدون GPU)
+python chat.py --gguf ./models/stars_expert.gguf
 
-# مع ملف GGUF (أسرع)
-python rag_code.py --project ./my_project --gguf ./models/code_expert.gguf
+# HuggingFace (تحميل مباشر)
+python chat.py --model ./models/stars_expert_merged
+python chat.py --model microsoft/phi-2
 
-# سؤال واحد مباشر
-python rag_code.py --project . --model microsoft/phi-2 \
-    --question "ما الذي تفعله دالة process_data؟"
+# Ollama (أسهل — بدون تحميل يدوي)
+python chat.py --ollama llama3
+python chat.py --ollama mistral
+python chat.py --ollama phi3 --ollama-host http://192.168.1.5:11434
 
-# ضبط حجم القطع
-python rag_code.py --project . --model microsoft/phi-2 --chunk 30
+# تخصيص الإخراج
+python chat.py --gguf ./models/stars_expert.gguf \
+    --temp 0.7 --max-tokens 600
 ```
 
-**يدعم:** `.py .js .ts .java .cpp .go .rs .sql .md` وغيرها
-
-**كيف يعمل:**
+**أوامر داخل المحادثة:**
 ```
-1. يقرأ جميع ملفات مشروعك
-2. يقسّمها إلى قطع صغيرة
-3. عند سؤالك → يبحث عن أقرب القطع لسؤالك
-4. يعطيها للنموذج مع السؤال → النموذج يجيب بناءً عليها
+مسح / clear  ← مسح تاريخ المحادثة
+حفظ / save   ← حفظ المحادثة في ملف JSON
+خروج / quit  ← إنهاء البرنامج
+مساعدة       ← عرض الأوامر
+```
+
+**إعداد Ollama:**
+```bash
+# تثبيت Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# تحميل نموذج
+ollama pull llama3
+ollama pull mistral
+ollama pull phi3
+
+# تشغيل الخادم (إن لم يكن يعمل)
+ollama serve
 ```
 
 ---
 
-### 4. Fine-tuning للغة العربية (`finetune_arabic.py`)
+### `test_suite.py` — الاختبارات التلقائية ★
 
-يدرّب النموذج على الإجابة بالعربي على أسئلة البرمجة.
+يتحقق من صحة كل مكونات المشروع:
 
 ```bash
-# بيانات عربية تجريبية مدمجة (8 أمثلة × 25)
-python finetune_arabic.py
+# كل الاختبارات
+python test_suite.py
 
-# بياناتك العربية الخاصة
-python finetune_arabic.py --data ./data/arabic_coding.jsonl
+# اختبارات سريعة (بدون تحميل نماذج)
+python test_suite.py --fast
 
-# تخصيص إعدادات التدريب
-python finetune_arabic.py \
-    --base-model microsoft/phi-2 \
-    --data ./data/arabic.jsonl \
-    --epochs 5 \
-    --output ./models/arabic_expert
+# مجموعة محددة
+python test_suite.py --module imports   # فحص المكتبات
+python test_suite.py --module package   # فحص حزمة stars_ai
+python test_suite.py --module model     # فحص StarsLM
+python test_suite.py --module data      # فحص معالجة البيانات
+python test_suite.py --module eval      # فحص نظام التقييم
+python test_suite.py --module files     # فحص وجود الملفات
+python test_suite.py --module env       # فحص متغيرات البيئة
 ```
 
-**صيغة البيانات العربية:**
-```json
-{"instruction": "اكتب دالة تجمع رقمين", "output": "def جمع(أ, ب):\n    return أ + ب"}
-{"instruction": "ما هو الـ decorator؟", "output": "شرح بالعربي مع مثال..."}
+**مثال على المخرجات:**
+```
+══════════════════════════════════════════════════════════════════
+  Stars AI — Test Suite
+══════════════════════════════════════════════════════════════════
+
+[1] اختبار المكتبات الأساسية
+  ✓  import PyTorch                                        (0.31ث)
+  ✓  import HuggingFace Transformers                      (0.18ث)
+  ✓  import PEFT / LoRA                                   (0.12ث)
+
+[5] اختبار نظام التقييم
+  ✓  Evaluator — 50 سؤال بالضبط                         (0.01ث)
+  ✓  Evaluator — صيغة الأسئلة صحيحة                      (0.02ث)
+
+══════════════════════════════════════════════════════════════════
+  النتائج: 24/24 اختبار ناجح | 0 فاشل
+══════════════════════════════════════════════════════════════════
+  ✅ جميع الاختبارات ناجحة — المشروع جاهز!
 ```
 
 ---
 
-### 5. ضغط النموذج (`prune_model.py`)
-
-يحذف الأوزان غير المهمة لتصغير النموذج قبل التحويل إلى GGUF.
+### `evaluate.py` — التقييم التلقائي
 
 ```bash
-# ضغط 30% (آمن — جودة ممتازة)
-python prune_model.py --model ./models/code_expert --ratio 0.3
+# تقييم نموذجك
+python evaluate.py --model ./models/stars_expert_merged
+python evaluate.py --gguf  ./models/stars_expert.gguf
 
-# ضغط 50% مع قياس الأداء قبل وبعد
-python prune_model.py --model ./models/code_expert --ratio 0.5 --benchmark
+# مقارنة قبل وبعد التدريب
+python evaluate.py \
+    --before microsoft/phi-2 \
+    --after  ./models/stars_expert_merged
 
-# ضغط هيكلي (أسرع في التنفيذ)
-python prune_model.py --model ./models/code_expert --structured --ratio 0.25
-
-# ضغط + تكميم INT8 (أقصى تصغير)
-python prune_model.py --model ./models/code_expert --ratio 0.3 --quantize
-
-# ثم حوّله إلى GGUF
-python main.py convert --model-dir ./models/code_expert_pruned --quant q4_0
+# تقييم نموذج HuggingFace مباشرة
+python evaluate.py --model microsoft/phi-2
 ```
 
-**مثال على نتيجة الضغط:**
-```
-╔════════════════════════════════════════════════════════╗
-║                    تقرير الضغط                        ║
-╠════════════════════════════════════════════════════════╣
-║  المقياس              قبل          بعد                ║
-║  المعاملات           2700.0M      1890.0M              ║
-║  نسبة الإزالة          0.0%        30.0%              ║
-║  وقت الاستدلال         4.2ث         2.9ث              ║
-║  Tokens/ثانية         11.9         17.2               ║
-║  تسريع الاستدلال      1.45x                           ║
-╚════════════════════════════════════════════════════════╝
-```
+**الفئات (50 سؤال):**
 
-**نصيحة لاختيار النسبة:**
-| النسبة | الجودة | الحجم | الاستخدام |
-|--------|--------|-------|-----------|
-| 20-30% | ممتازة | -25%  | موصى به |
-| 40-50% | جيدة   | -40%  | للأجهزة المحدودة |
-| 60-70% | مقبولة | -55%  | للأجهزة الضعيفة جداً |
+| الفئة | عدد الأسئلة |
+|-------|-------------|
+| Python أساسي | 10 |
+| البرمجة كائنية التوجه | 10 |
+| الخوارزميات وهياكل البيانات | 10 |
+| Python متقدم | 10 |
+| قواعد البيانات والـ API | 10 |
 
 ---
 
-## الملفات القديمة — مرجع سريع
+### `benchmark.py` — المقارنة العالمية
 
-### استعراض النماذج
 ```bash
-python main.py registry --gguf-only
-python main.py registry --provider meta
-python main.py registry --search llama
+# تصنيف نموذجك مقارنةً بالنماذج العالمية
+python benchmark.py --my-model ./models/stars_expert_merged
+
+# مع ملف GGUF
+python benchmark.py --my-model ./models/stars_expert.gguf --gguf
+
+# حفظ النتائج
+python benchmark.py --my-model ./models/stars_expert_merged \
+    --output ./results/benchmark.json
 ```
 
-### التدريب من الصفر
-```bash
-python train_custom.py                          # بيانات تجريبية
-python train_custom.py  # غيّر data_file في CONFIG
-```
+---
 
-### Fine-tuning (برمجة)
-```bash
-python finetune_lora.py                         # بيانات تلقائية
-```
+### `generate_data.py` — توليد البيانات
 
-### التقييم
-```bash
-python evaluate.py --model ./models/code_expert
-python evaluate.py --before microsoft/phi-2 --after ./models/code_expert
-```
-
-### المحادثة
-```bash
-python chat.py --model ./models/code_expert
-python chat.py --gguf ./models/code_expert.gguf
-```
-
-### التحويل إلى GGUF
-```bash
-# تثبيت llama.cpp
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp && make -j4 && cd ..
-
-python main.py convert \
-    --model-dir ./models/code_expert_merged \
-    --output    ./models/code_expert.gguf \
-    --quant     q4_0 \
-    --llama-cpp ./llama.cpp
-```
-
-### Multi-Agent Swarm
 ```bash
 export OPENAI_API_KEY=sk-...
-python main.py swarm --task "قارن أفضل 3 نماذج للبرمجة العربية"
+
+python generate_data.py --count 500  --topic python
+python generate_data.py --count 1000 --topic algorithms
+python generate_data.py --count 300  --topic arabic_python
+python generate_data.py --count 800  --topic mixed \
+    --output ./data/mixed.jsonl
+```
+
+**المواضيع:** `python` | `algorithms` | `web` | `arabic_python` | `mixed`
+
+---
+
+### `distill_model.py` + `auto_improve.py` + `compare_models.py`
+
+```bash
+# التحسين التلقائي (يكتشف نقاط الضعف ويعالجها)
+python auto_improve.py --model ./models/stars_expert_merged --rounds 3
+
+# مقارنة نماذج جنباً إلى جنب
+python compare_models.py --models phi-2 mistral llama3
+python compare_models.py --gguf ./models/before.gguf ./models/after.gguf
+
+# مساعد RAG يقرأ كودك
+python rag_code.py --project ./my_project --gguf ./models/stars_expert.gguf
+```
+
+---
+
+## إعداد البيئة
+
+```bash
+# انسخ ملف الإعدادات
+cp .env.example .env
+```
+
+ثم عدّل `.env` وأضف مفاتيحك:
+
+```env
+# OpenAI (للتوليد والتقطير عبر API)
+OPENAI_API_KEY=sk-...
+
+# HuggingFace (للرفع + النماذج المحمية)
+HF_TOKEN=hf_...
+
+# Weights & Biases (تتبع التدريب)
+WANDB_API_KEY=...
+WANDB_PROJECT=stars-ai
 ```
 
 ---
@@ -335,9 +471,8 @@ echo -n "sk-..." | gcloud secrets create openai_api_key --data-file=-
 
 ```bash
 sudo mkdir -p /opt/stars-ai
-sudo cp -r ./python/* /opt/stars-ai/
-python3 -m venv /opt/stars-ai/venv
-/opt/stars-ai/venv/bin/pip install -r /opt/stars-ai/requirements.txt
+sudo cp -r ./* /opt/stars-ai/
+pip install -r /opt/stars-ai/requirements.txt
 ```
 
 `/etc/systemd/system/stars-ai.service`:
@@ -348,8 +483,8 @@ After=network.target
 
 [Service]
 WorkingDirectory=/opt/stars-ai
-Environment="OPENAI_API_KEY=sk-..."
-ExecStart=/opt/stars-ai/venv/bin/python chat.py --model ./models/code_expert
+EnvironmentFile=/opt/stars-ai/.env
+ExecStart=/usr/bin/python3 chat.py --gguf ./models/stars_expert.gguf
 Restart=on-failure
 
 [Install]
@@ -369,9 +504,22 @@ sudo journalctl -u stars-ai -f
 |--------|----------|
 | معمارية StarsLM | Decoder-only + RoPE + RMSNorm + SwiGLU |
 | LoRA | r=16, alpha=32 — يدرّب 0.1% من الأوزان فقط |
+| تقطير المعرفة | Teacher→Student — KL Divergence على logits |
 | RAG | TF-IDF بسيط — لا يحتاج embeddings أو GPU |
 | Pruning | Magnitude + Structured + INT8 Dynamic |
 | تنسيق GGUF | v3 — متوافق مع llama.cpp، Ollama، LM Studio |
 | التكميم | f32 / f16 / Q8_0 / Q4_0 |
 | التقييم | 50 سؤال، 5 فئات، معيار النجاح 50% |
-| توليد البيانات | GPT-4o — 5 مواضيع — batch كل 10 أمثلة |
+| W&B | تتبع Loss + LR + GPU في الوقت الحقيقي |
+| Ollama | HTTP API محلي — بدون تحميل يدوي للنماذج |
+
+---
+
+## متطلبات النظام
+
+| الاستخدام | الحد الأدنى | الموصى به |
+|-----------|-------------|-----------|
+| محادثة GGUF (CPU) | 8 GB RAM | 16 GB RAM |
+| Fine-tuning LoRA | GPU 8 GB | GPU 16+ GB |
+| تقطير المعرفة | GPU 16 GB | GPU 24+ GB |
+| توليد البيانات (API) | أي جهاز | أي جهاز |
