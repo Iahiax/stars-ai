@@ -62,6 +62,65 @@ class GGUFChatEngine:
 
 
 # ════════════════════════════════════════════════════════════════
+# محرك Ollama
+# ════════════════════════════════════════════════════════════════
+
+class OllamaChatEngine:
+    """محرك محادثة يستخدم Ollama — يشغّل النماذج محلياً بسهولة."""
+
+    def __init__(self, model: str = "llama3", host: str = "http://localhost:11434"):
+        self.model = model
+        self.host  = host.rstrip("/")
+
+        try:
+            import requests
+        except ImportError:
+            print("❌ pip install requests")
+            sys.exit(1)
+
+        import requests as req
+        try:
+            resp = req.get(f"{self.host}/api/tags", timeout=5)
+            if resp.status_code != 200:
+                raise ConnectionError("Ollama لا يستجيب")
+            models = [m["name"].split(":")[0] for m in resp.json().get("models", [])]
+            if model not in models and model.split(":")[0] not in models:
+                print(f"  ⚠ النموذج '{model}' غير موجود في Ollama")
+                print(f"  ثبّته بـ: ollama pull {model}")
+                print(f"  النماذج المتاحة: {', '.join(models) or 'لا يوجد'}")
+        except Exception as e:
+            print(f"❌ Ollama غير مشغّل: {e}")
+            print(f"  شغّل أولاً: ollama serve")
+            print(f"  ثم: ollama pull {model}")
+            sys.exit(1)
+
+        print(f"  ✓ Ollama جاهز — النموذج: {model} ({self.host})")
+
+    def generate(self, prompt: str, max_tokens: int = 400, temperature: float = 0.3) -> str:
+        import requests
+        payload = {
+            "model":  self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "top_p": 0.9,
+                "stop": ["### المهمة:", "###"],
+            },
+        }
+        try:
+            resp = requests.post(
+                f"{self.host}/api/generate",
+                json=payload, timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json().get("response", "").strip()
+        except Exception as e:
+            return f"⚠ خطأ Ollama: {e}"
+
+
+# ════════════════════════════════════════════════════════════════
 # محرك HuggingFace
 # ════════════════════════════════════════════════════════════════
 
@@ -278,6 +337,9 @@ def main():
     )
     parser.add_argument("--gguf",       help="مسار ملف GGUF (أسرع)")
     parser.add_argument("--model",      help="مسار نموذج HuggingFace أو اسمه")
+    parser.add_argument("--ollama",     help="اسم نموذج Ollama (مثال: llama3, mistral, phi3)")
+    parser.add_argument("--ollama-host",default="http://localhost:11434",
+                        help="عنوان خادم Ollama (افتراضي: http://localhost:11434)")
     parser.add_argument("--temp",       type=float, default=0.3,
                         help="درجة الإبداع: 0.1=دقيق, 0.9=مبدع (افتراضي: 0.3)")
     parser.add_argument("--max-tokens", type=int, default=400)
@@ -285,7 +347,7 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.gguf and not args.model:
+    if not args.gguf and not args.model and not args.ollama:
         for path, is_gguf in [
             ("./models/stars_expert.gguf", True),
             ("./models/code_expert.gguf",  True),
@@ -301,12 +363,18 @@ def main():
                 break
         else:
             print("❌ لم يُحدَّد نموذج.")
-            print("  python chat.py --gguf ./models/stars_expert.gguf")
-            print("  python chat.py --model microsoft/phi-2")
+            print("  python chat.py --gguf   ./models/stars_expert.gguf")
+            print("  python chat.py --model  microsoft/phi-2")
+            print("  python chat.py --ollama llama3")
             sys.exit(1)
 
     print("\n[تحميل النموذج...]")
-    engine = GGUFChatEngine(args.gguf, n_ctx=args.ctx) if args.gguf else HFChatEngine(args.model)
+    if args.ollama:
+        engine = OllamaChatEngine(args.ollama, host=args.ollama_host)
+    elif args.gguf:
+        engine = GGUFChatEngine(args.gguf, n_ctx=args.ctx)
+    else:
+        engine = HFChatEngine(args.model)
 
     orig = engine.generate
     engine.generate = lambda p: orig(p, max_tokens=args.max_tokens, temperature=args.temp)
