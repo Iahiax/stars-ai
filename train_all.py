@@ -376,6 +376,24 @@ def _run_lora(
     print(f"\n  بدء التدريب ({epochs} epochs)...")
     os.makedirs(output, exist_ok=True)
 
+    # ── Weights & Biases (اختياري) ──────────────────────────────
+    report_to = "none"
+    try:
+        import wandb
+        if os.getenv("WANDB_API_KEY"):
+            wandb.init(
+                project = os.getenv("WANDB_PROJECT", "stars-ai"),
+                name    = label,
+                config  = {
+                    "model": model_path, "epochs": epochs,
+                    "lr": lr, "batch": batch, "max_len": max_len,
+                },
+            )
+            report_to = "wandb"
+            print(f"  📊 Weights & Biases: wandb.ai/{wandb.run.entity}/{wandb.run.project}")
+    except ImportError:
+        pass
+
     args = TrainingArguments(
         output_dir                  = output,
         num_train_epochs            = epochs,
@@ -389,7 +407,7 @@ def _run_lora(
         save_total_limit            = 2,
         fp16                        = torch.cuda.is_available(),
         optim                       = "adamw_torch",
-        report_to                   = "none",
+        report_to                   = report_to,
         run_name                    = label,
     )
 
@@ -399,7 +417,20 @@ def _run_lora(
         train_dataset = dataset,
         data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False),
     )
-    trainer.train()
+
+    # ── استئناف من نقطة تفتيش إذا طُلب ──────────────────────────
+    resume_ckpt = None
+    if os.path.exists(output):
+        checkpoints = sorted(
+            [d for d in Path(output).iterdir()
+             if d.is_dir() and d.name.startswith("checkpoint-")],
+            key=lambda x: int(x.name.split("-")[-1]),
+        )
+        if checkpoints:
+            resume_ckpt = str(checkpoints[-1])
+            print(f"  ← استئناف من: {resume_ckpt}")
+
+    trainer.train(resume_from_checkpoint=resume_ckpt)
 
     # ── الحفظ ─────────────────────────────────────────────────
     print(f"\n  حفظ النموذج...")
@@ -596,6 +627,10 @@ def main():
     parser.add_argument("--epochs",      type=int, default=None, help="عدد epochs")
     parser.add_argument("--prune-ratio", type=float, default=None, help="نسبة الضغط")
     parser.add_argument("--llama-cpp",   default=None, help="مسار مجلد llama.cpp")
+    parser.add_argument("--resume",      action="store_true",
+                        help="استئناف التدريب من آخر نقطة تفتيش (checkpoint) تلقائياً")
+    parser.add_argument("--wandb",       action="store_true",
+                        help="تفعيل Weights & Biases (يحتاج WANDB_API_KEY)")
     args = parser.parse_args()
 
     # تطبيق التعديلات على الإعدادات
